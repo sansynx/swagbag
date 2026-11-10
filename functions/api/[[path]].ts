@@ -351,6 +351,34 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
         ),
       });
     if (path === "rewards" && method === "GET") return json({ rewards });
+    if (path === "notifications" && method === "GET") {
+      if (!allowed(user, ["employee"])) return error("Forbidden", 403);
+      const notifications = (
+        await db
+          .prepare(
+            "SELECT c.id,c.title,c.occasion,c.created_at FROM campaigns c LEFT JOIN notification_reads r ON r.campaign_id=c.id AND r.user_id=? WHERE r.campaign_id IS NULL ORDER BY c.created_at DESC LIMIT 20",
+          )
+          .bind(user.id)
+          .all()
+      ).results;
+      return json({ notifications });
+    }
+    if (path === "notifications/read" && method === "POST") {
+      if (!allowed(user, ["employee"])) return error("Forbidden", 403);
+      const id = field((await body(request)).campaignId, 60);
+      const campaign = await db
+        .prepare("SELECT id FROM campaigns WHERE id=?")
+        .bind(id)
+        .first();
+      if (!campaign) return error("Campaign not found", 404);
+      await db
+        .prepare(
+          "INSERT OR IGNORE INTO notification_reads(campaign_id,user_id) VALUES(?,?)",
+        )
+        .bind(id, user.id)
+        .run();
+      return json({ ok: true });
+    }
     if (path === "users" && method === "GET") {
       if (!allowed(user, ["hr", "finance"])) return error("Forbidden", 403);
       return json({
