@@ -81,7 +81,8 @@ const money = (cents: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(cents / 100);
 const date = (value: string) =>
   new Date(
@@ -154,7 +155,9 @@ function App() {
     if (!id) return;
     api(`campaigns/${id}/capture`, {})
       .then(() => {
-        setNotice("Payment confirmed. Rewards are ready.");
+        setNotice(
+          "Sandbox payment captured. Reward delivery requires a provider integration.",
+        );
         return refresh(user);
       })
       .catch((e) => setNotice(e.message))
@@ -862,7 +865,7 @@ function Campaigns({
               ) : (
                 <span className="secondary-text">
                   {c.status === "paid"
-                    ? "Completed"
+                    ? "Payment captured"
                     : c.status === "pending"
                       ? "Awaiting PayPal"
                       : "Open"}
