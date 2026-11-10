@@ -644,6 +644,55 @@
   color: var(--ink);
   text-transform: capitalize;
 }
+.payment-preview {
+  width: 100%;
+  border-top: 1px solid var(--line);
+  padding: 18px 2px 2px;
+}
+.payment-preview h4 {
+  margin: 5px 0 4px;
+  font-size: 19px;
+}
+.payment-preview p {
+  margin: 0;
+}
+.payment-preview ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 18px 0 13px;
+  margin: 0;
+  list-style: none;
+}
+.payment-preview li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.payment-preview li.current {
+  color: var(--blue);
+}
+.payment-preview li span {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+}
+.payment-preview-detail {
+  color: var(--ink) !important;
+  font-weight: 700;
+}
+.payment-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 15px;
+}
 .coupon-ready {
   color: #148069;
 }

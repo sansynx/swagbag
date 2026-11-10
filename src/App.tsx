@@ -1030,6 +1030,10 @@ function Campaigns({
     [preference, setPreference] = useState(""),
     [recommendations, setRecommendations] = useState<Reward[] | null>(null),
     [reason, setReason] = useState("");
+  const [paymentPreview, setPaymentPreview] = useState<{
+    campaignId: string;
+    step: number;
+  } | null>(null);
   const [recipients, setRecipients] = useState<
     {
       id: string;
@@ -1143,15 +1147,18 @@ function Campaigns({
               ) : user.role === "finance" && c.status !== "paid" ? (
                 <button
                   className="button secondary"
-                  disabled={!c.selection_count || busy || !paypalConfigured}
+                  disabled={!c.selection_count || busy}
                   title={
-                    !paypalConfigured
-                      ? "PayPal sandbox credentials are needed"
-                      : !c.selection_count
-                        ? "Waiting for employee choices"
-                        : undefined
+                    !c.selection_count
+                      ? "Waiting for employee choices"
+                      : undefined
                   }
                   onClick={async () => {
+                    if (!paypalConfigured) {
+                      setActive(c.id);
+                      setPaymentPreview({ campaignId: c.id, step: 0 });
+                      return;
+                    }
                     const x = await run<{ approvalUrl: string }>(
                       `campaigns/${c.id}/checkout`,
                       {},
@@ -1164,7 +1171,7 @@ function Campaigns({
                     ? "Waiting for choices"
                     : paypalConfigured
                       ? `Pay ${money(c.selection_count * c.budget_cents)}`
-                      : "Add PayPal keys to pay"}{" "}
+                      : "Preview PayPal flow"}{" "}
                   <ArrowRight size={15} />
                 </button>
               ) : (
@@ -1277,6 +1284,67 @@ function Campaigns({
                 )}
               </div>
             )}
+            {paymentPreview?.campaignId === c.id &&
+              active === c.id &&
+              user.role === "finance" && (
+                <section
+                  className="payment-preview"
+                  aria-label="PayPal sandbox flow preview"
+                >
+                  <div>
+                    <span className="eyebrow">SIMULATED SANDBOX PREVIEW</span>
+                    <h4>How this payment moves</h4>
+                    <p>
+                      No PayPal request is made and no payment is recorded in
+                      this preview
+                    </p>
+                  </div>
+                  <ol>
+                    {[
+                      "Create order",
+                      "Approve with PayPal",
+                      "Capture payment",
+                    ].map((label, index) => (
+                      <li
+                        key={label}
+                        className={
+                          index <= paymentPreview.step ? "current" : ""
+                        }
+                      >
+                        <span>{index + 1}</span>
+                        <b>{label}</b>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="payment-preview-detail">
+                    {paymentPreview.step === 0
+                      ? `Order request preview · ${money(c.selection_count * c.budget_cents)} for ${c.selection_count} chosen reward${c.selection_count === 1 ? "" : "s"}`
+                      : paymentPreview.step === 1
+                        ? "Approval preview · finance reviews the amount on PayPal"
+                        : "Capture response preview · a real capture would appear in the ledger and audit trail"}
+                  </p>
+                  <div className="payment-preview-actions">
+                    <button
+                      className="button primary"
+                      onClick={() =>
+                        setPaymentPreview({
+                          campaignId: c.id,
+                          step: (paymentPreview.step + 1) % 3,
+                        })
+                      }
+                    >
+                      {paymentPreview.step === 2 ? "Replay flow" : "Next step"}
+                      <ArrowRight size={15} />
+                    </button>
+                    <button
+                      className="button text-button"
+                      onClick={() => setPaymentPreview(null)}
+                    >
+                      Close preview
+                    </button>
+                  </div>
+                </section>
+              )}
             {active === c.id &&
               !isPreview &&
               user.role === "employee" &&
