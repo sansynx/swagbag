@@ -643,6 +643,38 @@
   color: #8a98aa;
   font-size: 11px;
 }
+.password-form {
+  border-top: 1px solid var(--line);
+  margin-top: 30px;
+  padding-top: 22px;
+  display: grid;
+  gap: 12px;
+  max-width: 380px;
+}
+.password-form h2 {
+  font-size: 19px;
+  margin: 0;
+  color: #102853;
+}
+.password-form p {
+  font-size: 11px;
+  color: #7f8ca1;
+  margin: 0;
+}
+.password-form label {
+  display: grid;
+  gap: 6px;
+  color: #465671;
+  font-size: 11px;
+  font-weight: 800;
+}
+.password-form input {
+  height: 43px;
+  border: 1px solid #dce4ef;
+  border-radius: 8px;
+  padding: 0 12px;
+  color: #1c345c;
+}
 .picker {
   width: 100%;
   border-top: 1px solid var(--line);

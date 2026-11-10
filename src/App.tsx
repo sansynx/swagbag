@@ -593,6 +593,16 @@ function App() {
                 Built for the PayPal AI Hackathon by HR Flings. Independent
                 project; not affiliated with or endorsed by PayPal.
               </div>
+              <PasswordForm
+                busy={busy}
+                onSubmit={async (data) => {
+                  return !!(await run(
+                    "auth/password",
+                    data,
+                    "Password updated.",
+                  ));
+                }}
+              />
             </div>
           )}
         </div>
@@ -1105,6 +1115,55 @@ function UserForm({
       </div>
       <button className="button primary" disabled={busy}>
         <Plus size={17} /> Add member
+      </button>
+    </form>
+  );
+}
+function PasswordForm({
+  onSubmit,
+  busy,
+}: {
+  onSubmit: (data: unknown) => Promise<boolean>;
+  busy: boolean;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  return (
+    <form
+      className="password-form"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (await onSubmit({ currentPassword, newPassword })) {
+          setCurrentPassword("");
+          setNewPassword("");
+        }
+      }}
+    >
+      <h2>Account security</h2>
+      <p>Change your password and sign out other sessions.</p>
+      <label>
+        Current password
+        <input
+          type="password"
+          autoComplete="current-password"
+          required
+          value={currentPassword}
+          onChange={(event) => setCurrentPassword(event.target.value)}
+        />
+      </label>
+      <label>
+        New password
+        <input
+          type="password"
+          autoComplete="new-password"
+          minLength={12}
+          required
+          value={newPassword}
+          onChange={(event) => setNewPassword(event.target.value)}
+        />
+      </label>
+      <button className="button secondary" disabled={busy}>
+        Update password
       </button>
     </form>
   );

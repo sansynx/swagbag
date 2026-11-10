@@ -313,6 +313,36 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
         .run();
       return json({ ok: true }, 200, { "Set-Cookie": cookie(request, "", 0) });
     }
+    if (path === "auth/password" && method === "POST") {
+      const input = await body(request);
+      const current = field(input.currentPassword, 200);
+      const next = field(input.newPassword, 200);
+      if (next.length < 12 || current === next)
+        return error("Use a new password with at least 12 characters");
+      const account = await db
+        .prepare("SELECT password_salt,password_hash FROM users WHERE id=?")
+        .bind(user.id)
+        .first<{ password_salt: string; password_hash: string }>();
+      if (
+        !account ||
+        (await passwordHash(current, account.password_salt)) !==
+          account.password_hash
+      )
+        return error("Current password is incorrect", 403);
+      const salt = crypto.randomUUID();
+      await db.batch([
+        db
+          .prepare(
+            "UPDATE users SET password_salt=?,password_hash=? WHERE id=?",
+          )
+          .bind(salt, await passwordHash(next, salt), user.id),
+        db
+          .prepare("DELETE FROM sessions WHERE user_id=? AND token_hash<>?")
+          .bind(user.id, await sha(tokenFrom(request))),
+      ]);
+      await audit(db, user.id, "auth.password_changed", user.id);
+      return json({ ok: true });
+    }
     if (path === "me" && method === "GET")
       return json({
         user,
