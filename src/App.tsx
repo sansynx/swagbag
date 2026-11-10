@@ -719,7 +719,7 @@ function App() {
                   groups={groups}
                   onClose={() => setCreateOpen(false)}
                   onSubmit={async (data) => {
-                    if (await run("campaigns", data, "Campaign created."))
+                    if (await run("campaigns", data, "Campaign created"))
                       setCreateOpen(false);
                   }}
                 />
@@ -932,7 +932,7 @@ function App() {
                   return !!(await run(
                     "auth/password",
                     data,
-                    "Password updated.",
+                    "Password updated",
                   ));
                 }}
               />
@@ -1153,7 +1153,7 @@ function Campaigns({
                     const x = await run<{ approvalUrl: string }>(
                       `campaigns/${c.id}/checkout`,
                       {},
-                      "Taking you to PayPal.",
+                      "Taking you to PayPal",
                     );
                     if (x) location.href = x.approvalUrl;
                   }}
@@ -1332,7 +1332,7 @@ function Campaigns({
                         }>(
                           `campaigns/${c.id}/recommend`,
                           { preference },
-                          "Personalized picks are ready.",
+                          "Personalized picks are ready",
                         );
                         if (x) {
                           setRecommendations(x.rewards);
@@ -1359,7 +1359,7 @@ function Campaigns({
                           const x = await run(
                             `campaigns/${c.id}/select`,
                             { rewardId: r.id, reason: preference },
-                            "Your choice is saved.",
+                            "Your choice is saved",
                           );
                           if (x) {
                             setActive(null);

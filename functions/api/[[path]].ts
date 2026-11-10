@@ -471,7 +471,7 @@ export const onRequest = async (ctx: Ctx) => {
         .first<{ failures: number }>();
       if (throttle && throttle.failures >= 8)
         return error(
-          "Too many sign-in attempts. Try again in 15 minutes.",
+          "Too many sign-in attempts · Try again in 15 minutes",
           429,
         );
       const user = await db
@@ -1192,7 +1192,7 @@ export const onRequest = async (ctx: Ctx) => {
           })) as { response?: string | { ids?: unknown; reason?: unknown } };
         } catch {
           return error(
-            "AI suggestions are unavailable. You can still choose any reward.",
+            "AI suggestions are unavailable · You can still choose any reward",
             503,
           );
         }
