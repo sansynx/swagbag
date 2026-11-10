@@ -44,6 +44,15 @@ type Campaign = {
   created_at: string;
   selection_count: number;
   employee_count: number;
+  coupon_count: number;
+  audience_type?: "all" | "group" | "person";
+  audience_name?: string;
+};
+type Group = {
+  id: string;
+  name: string;
+  member_ids: string[];
+  created_at: string;
 };
 type Reward = {
   id: string;
@@ -56,6 +65,7 @@ type Selection = {
   reward_id: string;
   private_reason: string;
 };
+type Coupon = { campaign_id: string; code: string; created_at: string };
 type Payment = {
   campaign_id: string;
   title: string;
@@ -80,15 +90,34 @@ type Notification = {
   occasion: string;
   created_at: string;
 };
-type Page = "overview" | "campaigns" | "people" | "finance" | "about";
+type Page =
+  | "overview"
+  | "campaigns"
+  | "people"
+  | "groups"
+  | "finance"
+  | "about";
 
-async function api<T>(path: string, data?: unknown): Promise<T> {
-  const response = await fetch(`/api/${path}`, {
+let refreshPromise: Promise<boolean> | null = null;
+async function request(path: string, data?: unknown) {
+  return fetch(`/api/${path}`, {
     method: data === undefined ? "GET" : "POST",
     credentials: "same-origin",
     headers: data === undefined ? {} : { "Content-Type": "application/json" },
     body: data === undefined ? undefined : JSON.stringify(data),
   });
+}
+
+async function api<T>(path: string, data?: unknown): Promise<T> {
+  let response = await request(path, data);
+  if (response.status === 401 && !path.startsWith("auth/")) {
+    refreshPromise ??= request("auth/refresh", {})
+      .then((result) => result.ok)
+      .finally(() => {
+        refreshPromise = null;
+      });
+    if (await refreshPromise) response = await request(path, data);
+  }
   const result = (await response.json()) as T & { error?: string };
   if (!response.ok) throw new Error(result.error || "Request failed");
   return result;
@@ -125,7 +154,9 @@ function App() {
     [rewards, setRewards] = useState<Reward[]>([]),
     [users, setUsers] = useState<User[]>([]),
     [payments, setPayments] = useState<Payment[]>([]),
-    [audit, setAudit] = useState<Audit[]>([]);
+    [audit, setAudit] = useState<Audit[]>([]),
+    [groups, setGroups] = useState<Group[]>([]);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [paypalConfigured, setPaypalConfigured] = useState(false),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -135,11 +166,11 @@ function App() {
     [notifications, setNotifications] = useState<Notification[]>([]),
     [focusCampaign, setFocusCampaign] = useState<string | null>(null),
     [theme, setTheme] = useState<"light" | "dark">(() =>
-      localStorage.getItem("hrf-theme") === "dark" ? "dark" : "light",
+      localStorage.getItem("swagbag-theme") === "dark" ? "dark" : "light",
     );
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("hrf-theme", theme);
+    localStorage.setItem("swagbag-theme", theme);
   }, [theme]);
   useEffect(() => {
     const screen = window.matchMedia("(max-width: 800px)");
@@ -172,6 +203,10 @@ function App() {
       calls.push(
         api<{ users: User[] }>("users").then((x) => setUsers(x.users)),
       );
+    if (u.role === "hr")
+      calls.push(
+        api<{ groups: Group[] }>("groups").then((x) => setGroups(x.groups)),
+      );
     if (u.role === "finance")
       calls.push(
         api<{ payments: Payment[]; auditLogs: Audit[] }>("finance").then(
@@ -181,7 +216,14 @@ function App() {
           },
         ),
       );
-    if (u.role === "employee") calls.push(refreshNotifications());
+    if (u.role === "employee") {
+      calls.push(refreshNotifications());
+      calls.push(
+        api<{ coupons: Coupon[] }>("coupons").then((x) =>
+          setCoupons(x.coupons),
+        ),
+      );
+    }
     await Promise.all(calls);
   }
   useEffect(() => {
@@ -277,6 +319,16 @@ function App() {
           setUser(session.user);
           await refresh(session.user);
         }}
+        onRegister={async (token, name, password) => {
+          await api("auth/register", { token, name, password });
+          const session = await api<{ user: User; paypalConfigured: boolean }>(
+            "me",
+          );
+          setPaypalConfigured(session.paypalConfigured);
+          setUser(session.user);
+          await refresh(session.user);
+          history.replaceState(null, "", location.pathname);
+        }}
       />
     );
   const links: { id: Page; label: string; icon: typeof House }[] = [
@@ -285,6 +337,9 @@ function App() {
     ...(user.role === "employee"
       ? []
       : [{ id: "people" as Page, label: "People", icon: Users }]),
+    ...(user.role === "hr"
+      ? [{ id: "groups" as Page, label: "Groups", icon: Users }]
+      : []),
     ...(user.role === "finance"
       ? [{ id: "finance" as Page, label: "Finance & audit", icon: Receipt }]
       : []),
@@ -483,7 +538,7 @@ function App() {
                   )}
                 </div>
                 <img
-                  src="/images/team.webp"
+                  src={`/images/team-${theme}.webp`}
                   alt="Pencil sketch of a team celebration"
                   draggable={false}
                 />
@@ -629,6 +684,8 @@ function App() {
                 campaigns={campaigns.slice(0, 3)}
                 selections={selections}
                 rewards={rewards}
+                coupons={coupons}
+                theme={theme}
                 user={user}
                 busy={busy}
                 paypalConfigured={paypalConfigured}
@@ -658,6 +715,8 @@ function App() {
               {createOpen && user.role === "hr" && (
                 <CampaignForm
                   busy={busy}
+                  users={users}
+                  groups={groups}
                   onClose={() => setCreateOpen(false)}
                   onSubmit={async (data) => {
                     if (await run("campaigns", data, "Campaign created."))
@@ -671,6 +730,8 @@ function App() {
                 campaigns={campaigns}
                 selections={selections}
                 rewards={rewards}
+                coupons={coupons}
+                theme={theme}
                 user={user}
                 busy={busy}
                 paypalConfigured={paypalConfigured}
@@ -690,7 +751,11 @@ function App() {
                 <UserForm
                   busy={busy}
                   onSubmit={async (data) => {
-                    return !!(await run("users", data, "Team member added."));
+                    return await run<{ invitationUrl: string }>(
+                      "invitations",
+                      data,
+                      "Invitation created",
+                    );
                   }}
                 />
               )}
@@ -723,6 +788,17 @@ function App() {
                 ))}
               </div>
             </>
+          )}
+          {page === "groups" && user.role === "hr" && (
+            <GroupsPage
+              groups={groups}
+              employees={users.filter((member) => member.role === "employee")}
+              busy={busy}
+              onCreate={(data) => run("groups", data, "Group created")}
+              onMembers={(id, memberIds) =>
+                run(`groups/${id}/members`, { memberIds }, "Group updated")
+              }
+            />
           )}
           {page === "finance" && user.role === "finance" && (
             <>
@@ -814,10 +890,10 @@ function App() {
           )}
           {page === "about" && (
             <div className="about">
-              <div className="eyebrow">ABOUT HR FLINGS</div>
+              <div className="eyebrow">ABOUT SWAGBAG</div>
               <h1>More meaning in every moment</h1>
               <p>
-                HR Flings makes company celebrations feel personal through
+                SwagBag makes company celebrations feel personal through
                 thoughtful choices and clear budgets
               </p>
               <div className="about-grid">
@@ -847,7 +923,7 @@ function App() {
                 </div>
               </div>
               <div className="about-foot">
-                Built for the PayPal AI Hackathon by HR Flings · Independent
+                Built for the PayPal AI Hackathon by SwagBag · Independent
                 project, not affiliated with or endorsed by PayPal
               </div>
               <PasswordForm
@@ -921,6 +997,8 @@ function Campaigns({
   campaigns,
   selections,
   rewards,
+  coupons,
+  theme,
   user,
   busy,
   paypalConfigured,
@@ -932,6 +1010,8 @@ function Campaigns({
   campaigns: Campaign[];
   selections: Selection[];
   rewards: Reward[];
+  coupons: Coupon[];
+  theme: "light" | "dark";
   user: User;
   busy: boolean;
   paypalConfigured: boolean;
@@ -948,6 +1028,34 @@ function Campaigns({
     [preference, setPreference] = useState(""),
     [recommendations, setRecommendations] = useState<Reward[] | null>(null),
     [reason, setReason] = useState("");
+  const [recipients, setRecipients] = useState<
+    {
+      id: string;
+      name: string;
+      email: string;
+      chosen: number;
+      delivered: number;
+    }[]
+  >([]);
+  const [couponRecipient, setCouponRecipient] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  useEffect(() => {
+    if (!active || isPreview || user.role !== "hr") return;
+    void api<{ recipients: typeof recipients }>(
+      `campaigns/${active}/recipients`,
+    )
+      .then((result) => setRecipients(result.recipients))
+      .catch(() => setRecipients([]));
+  }, [active, isPreview, user.role]);
+  useEffect(() => {
+    if (!initialActive || isPreview) return;
+    requestAnimationFrame(() =>
+      document.getElementById(`campaign-${initialActive}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      }),
+    );
+  }, [initialActive, isPreview]);
   if (!campaigns.length)
     return (
       <Empty
@@ -959,22 +1067,24 @@ function Campaigns({
     <div className="campaigns">
       {campaigns.map((c) => {
         const chosen = selections.find((s) => s.campaign_id === c.id);
+        const coupon = coupons.find((item) => item.campaign_id === c.id);
+        const scene =
+          c.occasion === "Holiday"
+            ? "festival"
+            : c.occasion === "Onboarding"
+              ? "ride"
+              : c.occasion === "Team achievement"
+                ? "team"
+                : "unwind";
         return (
           <article
-            className={`campaign ${active === c.id ? "expanded" : ""}`}
+            id={`campaign-${c.id}`}
+            className={`campaign ${isPreview ? "preview" : ""} ${active === c.id ? "expanded" : ""}`}
             key={c.id}
           >
             <img
               className="campaign-image"
-              src={
-                c.occasion === "Holiday"
-                  ? "/images/festival.webp"
-                  : c.occasion === "Onboarding"
-                    ? "/images/ride.webp"
-                    : c.occasion === "Team achievement"
-                      ? "/images/team.webp"
-                      : "/images/unwind.webp"
-              }
+              src={`/images/${scene}-${theme}.webp`}
               alt=""
               draggable={false}
               loading="lazy"
@@ -983,27 +1093,30 @@ function Campaigns({
               <div className="campaign-meta">
                 <span>{c.occasion}</span>
                 <span className={`status ${c.status}`}>{c.status}</span>
+                {coupon && <span className="coupon-ready">Code ready</span>}
               </div>
               <h3>{c.title}</h3>
               <p>{c.message || "A little something to mark the moment"}</p>
-              <div className="campaign-facts">
-                <span>
-                  <Wallet size={15} />
-                  {money(c.budget_cents)} per person
-                </span>
-                <span>
-                  <Users size={15} />
-                  {c.selection_count} of {c.employee_count} chosen
-                </span>
-                {chosen && (
-                  <span className="chosen">
-                    <CheckCircle size={15} weight="fill" />
-                    Your choice:{" "}
-                    {rewards.find((r) => r.id === chosen.reward_id)?.title ||
-                      chosen.reward_id}
+              {!isPreview && (
+                <div className="campaign-facts">
+                  <span>
+                    <Wallet size={15} />
+                    {money(c.budget_cents)} per person
                   </span>
-                )}
-              </div>
+                  <span>
+                    <Users size={15} />
+                    {c.selection_count} of {c.employee_count} chosen
+                  </span>
+                  {chosen && (
+                    <span className="chosen">
+                      <CheckCircle size={15} weight="fill" />
+                      Your choice:{" "}
+                      {rewards.find((r) => r.id === chosen.reward_id)?.title ||
+                        chosen.reward_id}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="campaign-action">
               {isPreview ? (
@@ -1011,7 +1124,7 @@ function Campaigns({
                   className="button text-button"
                   onClick={() => onOpen(c.id)}
                 >
-                  Open moment <ArrowRight size={17} />
+                  See moment <ArrowRight size={17} />
                 </button>
               ) : user.role === "employee" && c.status === "open" ? (
                 <button
@@ -1082,9 +1195,96 @@ function Campaigns({
                   <span>
                     Current state <strong>{c.status}</strong>
                   </span>
+                  <span>
+                    Sent to <strong>{c.audience_name || "Everyone"}</strong>
+                  </span>
+                  <span>
+                    Codes delivered{" "}
+                    <strong>
+                      {c.coupon_count} of {c.employee_count}
+                    </strong>
+                  </span>
                 </div>
+                {user.role === "hr" && (
+                  <div className="coupon-send">
+                    <span className="eyebrow">INDIVIDUAL CODE</span>
+                    <p>
+                      Deliver a pre-funded voucher code privately to one
+                      recipient. Code delivery is recorded in the audit trail
+                    </p>
+                    <form
+                      onSubmit={async (event) => {
+                        event.preventDefault();
+                        if (
+                          await run(
+                            `campaigns/${c.id}/coupons`,
+                            { userId: couponRecipient, code: couponCode },
+                            "Code sent privately",
+                          )
+                        ) {
+                          setCouponCode("");
+                          setCouponRecipient("");
+                          const result = await api<{
+                            recipients: typeof recipients;
+                          }>(`campaigns/${c.id}/recipients`);
+                          setRecipients(result.recipients);
+                        }
+                      }}
+                    >
+                      <select
+                        required
+                        aria-label="Coupon recipient"
+                        value={couponRecipient}
+                        onChange={(event) =>
+                          setCouponRecipient(event.target.value)
+                        }
+                      >
+                        <option value="">Choose recipient</option>
+                        {recipients
+                          .filter((recipient) => !recipient.delivered)
+                          .map((recipient) => (
+                            <option key={recipient.id} value={recipient.id}>
+                              {recipient.name}
+                            </option>
+                          ))}
+                      </select>
+                      <input
+                        required
+                        minLength={4}
+                        maxLength={128}
+                        aria-label="Coupon code"
+                        placeholder="Voucher code"
+                        value={couponCode}
+                        onChange={(event) => setCouponCode(event.target.value)}
+                      />
+                      <button
+                        className="button primary"
+                        disabled={busy || !couponRecipient}
+                      >
+                        Send code
+                      </button>
+                    </form>
+                    <small>
+                      {
+                        recipients.filter((recipient) => recipient.delivered)
+                          .length
+                      }{" "}
+                      of {recipients.length} codes sent
+                    </small>
+                  </div>
+                )}
               </div>
             )}
+            {active === c.id &&
+              !isPreview &&
+              user.role === "employee" &&
+              coupon && (
+                <div className="coupon-received">
+                  <span className="eyebrow">YOUR PRIVATE CODE</span>
+                  <strong>{coupon.code}</strong>
+                  <small>Use this code with its voucher provider</small>
+                </div>
+              )}
             {active === c.id &&
               !isPreview &&
               user.role === "employee" &&
@@ -1188,15 +1388,23 @@ function CampaignForm({
   onSubmit,
   onClose,
   busy,
+  users,
+  groups,
 }: {
   onSubmit: (data: unknown) => Promise<void>;
   onClose: () => void;
   busy: boolean;
+  users: User[];
+  groups: Group[];
 }) {
   const [title, setTitle] = useState(""),
     [occasion, setOccasion] = useState("Holiday"),
     [message, setMessage] = useState(""),
-    [budget, setBudget] = useState("75");
+    [budget, setBudget] = useState("75"),
+    [audienceType, setAudienceType] = useState<"all" | "group" | "person">(
+      "all",
+    ),
+    [audienceId, setAudienceId] = useState("");
   return (
     <form
       className="panel form-panel"
@@ -1207,6 +1415,8 @@ function CampaignForm({
           occasion,
           message,
           budgetCents: Math.round(Number(budget) * 100),
+          audienceType,
+          audienceId: audienceType === "all" ? undefined : audienceId,
         });
       }}
     >
@@ -1258,6 +1468,44 @@ function CampaignForm({
           />
         </label>
         <label>
+          Who receives this
+          <select
+            value={audienceType}
+            onChange={(e) => {
+              setAudienceType(e.target.value as "all" | "group" | "person");
+              setAudienceId("");
+            }}
+          >
+            <option value="all">Everyone</option>
+            <option value="group" disabled={!groups.length}>
+              A group
+            </option>
+            <option value="person">One employee</option>
+          </select>
+        </label>
+        {audienceType !== "all" && (
+          <label>
+            {audienceType === "group" ? "Group" : "Employee"}
+            <select
+              required
+              value={audienceId}
+              onChange={(e) => setAudienceId(e.target.value)}
+            >
+              <option value="">
+                Choose {audienceType === "group" ? "a group" : "a person"}
+              </option>
+              {(audienceType === "group"
+                ? groups
+                : users.filter((member) => member.role === "employee")
+              ).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label>
           Message to employees
           <input
             maxLength={300}
@@ -1277,29 +1525,30 @@ function UserForm({
   onSubmit,
   busy,
 }: {
-  onSubmit: (data: unknown) => Promise<boolean>;
+  onSubmit: (data: unknown) => Promise<{ invitationUrl: string } | undefined>;
   busy: boolean;
 }) {
   const [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [role, setRole] = useState<Role>("employee"),
-    [password, setPassword] = useState("");
+    [invitationUrl, setInvitationUrl] = useState("");
   return (
     <form
       className="panel form-panel"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (await onSubmit({ name, email, role, password })) {
+        const result = await onSubmit({ name, email, role });
+        if (result) {
+          setInvitationUrl(result.invitationUrl);
           setName("");
           setEmail("");
-          setPassword("");
         }
       }}
     >
       <div className="form-title">
         <span>
-          <h2>Add a team member</h2>
-          <p>Create access for an employee or manager</p>
+          <h2>Invite a teammate</h2>
+          <p>Choose their role, then share the private join link</p>
         </span>
       </div>
       <div className="form-grid">
@@ -1334,23 +1583,168 @@ function UserForm({
             <option value="finance">Finance admin</option>
           </select>
         </label>
-        <label>
-          Temporary password
-          <input
-            required
-            minLength={12}
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="At least 12 characters"
-          />
-        </label>
       </div>
       <button className="button primary" disabled={busy}>
-        <Plus size={17} /> Add member
+        <Plus size={17} /> Create invitation
       </button>
+      {invitationUrl && (
+        <div className="invitation-result" role="status">
+          <b>Invitation ready</b>
+          <p>
+            Copy this link and send it to the teammate. SwagBag does not email
+            it automatically
+          </p>
+          <input
+            readOnly
+            aria-label="Invitation link"
+            value={invitationUrl}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => void navigator.clipboard?.writeText(invitationUrl)}
+          >
+            Copy link
+          </button>
+        </div>
+      )}
     </form>
+  );
+}
+function GroupsPage({
+  groups,
+  employees,
+  busy,
+  onCreate,
+  onMembers,
+}: {
+  groups: Group[];
+  employees: User[];
+  busy: boolean;
+  onCreate: (data: { name: string; memberIds: string[] }) => Promise<unknown>;
+  onMembers: (id: string, memberIds: string[]) => Promise<unknown>;
+}) {
+  const [name, setName] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string[]>([]);
+  const toggle = (list: string[], id: string) =>
+    list.includes(id) ? list.filter((item) => item !== id) : [...list, id];
+  return (
+    <>
+      <Heading
+        eyebrow="FOCUSED MOMENTS"
+        title="Groups"
+        description="Celebrate a project team, competition winners or any circle you choose"
+      />
+      <form
+        className="panel form-panel group-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (await onCreate({ name, memberIds: selected })) {
+            setName("");
+            setSelected([]);
+          }
+        }}
+      >
+        <div className="form-title">
+          <span>
+            <h2>Create a group</h2>
+            <p>New moments sent to this group go to its current members</p>
+          </span>
+        </div>
+        <label>
+          Group name
+          <input
+            required
+            minLength={3}
+            maxLength={80}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Design sprint winners"
+          />
+        </label>
+        <div className="group-members" role="group" aria-label="Group members">
+          {employees.map((employee) => (
+            <label key={employee.id}>
+              <input
+                type="checkbox"
+                checked={selected.includes(employee.id)}
+                onChange={() => setSelected(toggle(selected, employee.id))}
+              />
+              <span>
+                <b>{employee.name}</b>
+                <small>{employee.email}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+        <button className="button primary" disabled={busy || !selected.length}>
+          <Plus size={17} /> Create group
+        </button>
+      </form>
+      <div className="group-list">
+        {groups.map((group) => (
+          <section className="group-row" key={group.id}>
+            <div className="group-summary">
+              <h2>{group.name}</h2>
+              <p>
+                {group.member_ids.length}{" "}
+                {group.member_ids.length === 1 ? "person" : "people"} ·{" "}
+                {group.member_ids
+                  .map(
+                    (id) => employees.find((person) => person.id === id)?.name,
+                  )
+                  .filter(Boolean)
+                  .join(", ") || "No members"}
+              </p>
+            </div>
+            <button
+              className="button text-button"
+              onClick={() => {
+                setEditing(editing === group.id ? null : group.id);
+                setDraft(group.member_ids);
+              }}
+            >
+              {editing === group.id ? "Close" : "Edit members"}
+            </button>
+            {editing === group.id && (
+              <div className="group-editor">
+                <div
+                  className="group-members"
+                  role="group"
+                  aria-label={`Members of ${group.name}`}
+                >
+                  {employees.map((employee) => (
+                    <label key={employee.id}>
+                      <input
+                        type="checkbox"
+                        checked={draft.includes(employee.id)}
+                        onChange={() => setDraft(toggle(draft, employee.id))}
+                      />
+                      <span>
+                        <b>{employee.name}</b>
+                        <small>{employee.email}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <button
+                  className="button primary"
+                  disabled={busy || !draft.length}
+                  onClick={async () => {
+                    if (await onMembers(group.id, draft)) setEditing(null);
+                  }}
+                >
+                  Save members
+                </button>
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
+    </>
   );
 }
 function PasswordForm({

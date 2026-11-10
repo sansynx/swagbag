@@ -44,16 +44,58 @@ export default function Landing({
   theme,
   onTheme,
   onLogin,
+  onRegister,
 }: {
   theme: "light" | "dark";
   onTheme: () => void;
   onLogin: (email: string, password: string) => Promise<void>;
+  onRegister: (token: string, name: string, password: string) => Promise<void>;
 }) {
-  const [role, setRole] = useState<Role | null>(null);
+  const initialInvite =
+    new URLSearchParams(location.search).get("invite") || "";
+  const [role, setRole] = useState<Role | null>(
+    initialInvite ? "employee" : null,
+  );
+  const [mode, setMode] = useState<"login" | "register">(
+    initialInvite ? "register" : "login",
+  );
+  const [inviteToken, setInviteToken] = useState(initialInvite);
+  const [invitation, setInvitation] = useState<{
+    email: string;
+    role: Role;
+    name: string;
+  } | null>(null);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (mode !== "register" || inviteToken.length < 32) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      void fetch(
+        `/api/auth/invitation?token=${encodeURIComponent(inviteToken)}`,
+        { signal: controller.signal },
+      )
+        .then((response) => (response.ok ? response.json() : null))
+        .then(
+          (
+            result: {
+              invitation?: { email: string; role: Role; name: string };
+            } | null,
+          ) => {
+            setInvitation(result?.invitation || null);
+            if (result?.invitation) setName(result.invitation.name);
+          },
+        )
+        .catch(() => {});
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [mode, inviteToken]);
   useEffect(() => {
     if (!role) return;
     const close = (event: KeyboardEvent) => {
@@ -68,9 +110,10 @@ export default function Landing({
     setBusy(true);
     setError("");
     try {
-      await onLogin(email, password);
+      if (mode === "register") await onRegister(inviteToken, name, password);
+      else await onLogin(email, password);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sign in failed");
+      setError(cause instanceof Error ? cause.message : "Could not continue");
     } finally {
       setBusy(false);
     }
@@ -95,7 +138,13 @@ export default function Landing({
               {theme === "light" ? <MoonStars size={22} /> : <Sun size={22} />}
             </span>
           </button>
-          <button className="text-action" onClick={() => setRole("employee")}>
+          <button
+            className="text-action"
+            onClick={() => {
+              setMode("login");
+              setRole("employee");
+            }}
+          >
             Sign in <ArrowRight size={17} />
           </button>
         </div>
@@ -126,7 +175,7 @@ export default function Landing({
           </div>
           <div className="hero-visual">
             <img
-              src="/images/hero.webp"
+              src={`/images/hero-${theme}.webp`}
               alt="Playful pencil sketch of coworkers celebrating"
               draggable={false}
               fetchPriority="high"
@@ -181,7 +230,7 @@ export default function Landing({
           <div className="moments-gallery">
             <figure className="moment-tall">
               <img
-                src="/images/festival.webp"
+                src={`/images/festival-${theme}.webp`}
                 alt="Pencil sketch of festival lanterns and faceless dancers"
                 draggable={false}
                 loading="lazy"
@@ -192,7 +241,7 @@ export default function Landing({
             </figure>
             <figure>
               <img
-                src="/images/ride.webp"
+                src={`/images/ride-${theme}.webp`}
                 alt="Pencil sketch of a bicycle ride"
                 draggable={false}
                 loading="lazy"
@@ -203,7 +252,7 @@ export default function Landing({
             </figure>
             <figure>
               <img
-                src="/images/unwind.webp"
+                src={`/images/unwind-${theme}.webp`}
                 alt="Pencil sketch of a quiet evening with a book"
                 draggable={false}
                 loading="lazy"
@@ -214,7 +263,7 @@ export default function Landing({
             </figure>
             <figure className="moment-wide">
               <img
-                src="/images/team.webp"
+                src={`/images/team-${theme}.webp`}
                 alt="Pencil sketch of a team celebration"
                 draggable={false}
                 loading="lazy"
@@ -237,7 +286,13 @@ export default function Landing({
           </div>
           <div className="door-list">
             {doors.map((door) => (
-              <button key={door.role} onClick={() => setRole(door.role)}>
+              <button
+                key={door.role}
+                onClick={() => {
+                  setMode("login");
+                  setRole(door.role);
+                }}
+              >
                 <door.icon size={25} weight="light" />
                 <span>
                   <strong>{door.label}</strong>
@@ -251,7 +306,7 @@ export default function Landing({
       </main>
       <footer className="landing-footer">
         <Brand />
-        <span>Built for the PayPal AI Hackathon by HR Flings</span>
+        <span>Built for the PayPal AI Hackathon by SwagBag</span>
         <span>Independent project · PayPal sandbox</span>
       </footer>
 
@@ -266,7 +321,9 @@ export default function Landing({
             className="login-sheet"
             role="dialog"
             aria-modal="true"
-            aria-label={`${role} sign in`}
+            aria-label={
+              mode === "register" ? "Join with invitation" : `${role} sign in`
+            }
           >
             <button
               className="icon-button close-login"
@@ -276,43 +333,133 @@ export default function Landing({
               <X size={22} />
             </button>
             <Brand />
-            <span className="eyebrow">WELCOME BACK</span>
+            <span className="eyebrow">
+              {mode === "register" ? "YOUR INVITATION" : "WELCOME BACK"}
+            </span>
             <h2>
-              {role === "hr"
-                ? "Make a moment"
-                : role === "finance"
-                  ? "Keep it in view"
-                  : "Your moments await"}
+              {mode === "register"
+                ? "Join your team"
+                : role === "hr"
+                  ? "Make a moment"
+                  : role === "finance"
+                    ? "Keep it in view"
+                    : "Your moments await"}
             </h2>
             <p>
-              Sign in to your{" "}
-              {role === "hr"
-                ? "HR"
-                : role === "finance"
-                  ? "finance"
-                  : "employee"}{" "}
-              space
+              {mode === "register"
+                ? "Your organization has invited you to SwagBag. Your role is set by that invitation"
+                : `Sign in to your ${role === "hr" ? "HR" : role === "finance" ? "finance" : "employee"} space`}
             </p>
+            <div
+              className="auth-tabs"
+              role="tablist"
+              aria-label="Account access"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "login"}
+                className={mode === "login" ? "selected" : ""}
+                onClick={() => {
+                  setMode("login");
+                  setError("");
+                }}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "register"}
+                className={mode === "register" ? "selected" : ""}
+                onClick={() => {
+                  setMode("register");
+                  setError("");
+                }}
+              >
+                Join with invite
+              </button>
+            </div>
             <form onSubmit={submit}>
-              <label>
-                Email address
-                <input
-                  type="email"
-                  autoComplete="username"
-                  required
-                  placeholder="you@company.com"
-                  autoFocus
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </label>
+              {mode === "register" ? (
+                <>
+                  {!invitation && (
+                    <label>
+                      Invitation code
+                      <input
+                        required
+                        autoFocus
+                        value={inviteToken}
+                        onChange={(event) => {
+                          setInviteToken(event.target.value.trim());
+                          setInvitation(null);
+                        }}
+                        placeholder="Paste the code from your invitation"
+                      />
+                    </label>
+                  )}
+                  {invitation && (
+                    <div className="invitation-identity">
+                      <b>{invitation.email}</b>
+                      <span>
+                        {invitation.role === "hr"
+                          ? "HR manager"
+                          : invitation.role === "finance"
+                            ? "Finance admin"
+                            : "Employee"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInviteToken("");
+                          setInvitation(null);
+                        }}
+                      >
+                        Use another invitation
+                      </button>
+                    </div>
+                  )}
+                  <label>
+                    Your name
+                    <input
+                      required
+                      minLength={2}
+                      maxLength={80}
+                      autoComplete="name"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      placeholder="Your full name"
+                    />
+                  </label>
+                </>
+              ) : (
+                <label>
+                  Email address
+                  <input
+                    type="email"
+                    autoComplete="username"
+                    required
+                    placeholder="you@company.com"
+                    autoFocus
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                  />
+                </label>
+              )}
               <label>
                 Password
                 <input
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete={
+                    mode === "register" ? "new-password" : "current-password"
+                  }
                   required
-                  placeholder="Your password"
+                  minLength={mode === "register" ? 12 : undefined}
+                  placeholder={
+                    mode === "register"
+                      ? "At least 12 characters"
+                      : "Your password"
+                  }
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                 />
@@ -323,7 +470,8 @@ export default function Landing({
                 </div>
               )}
               <button className="button primary full" disabled={busy}>
-                Enter workspace <ArrowRight size={18} />
+                {mode === "register" ? "Create account" : "Enter workspace"}{" "}
+                <ArrowRight size={18} />
               </button>
             </form>
             <small className="login-assurance">

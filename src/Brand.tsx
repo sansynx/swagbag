@@ -3,7 +3,7 @@ export default function Brand() {
     <span className="brand">
       <img src="/mark.svg" alt="" draggable={false} />
       <span>
-        HR <strong>Flings</strong>
+        Swag<strong>Bag</strong>
       </span>
     </span>
   );

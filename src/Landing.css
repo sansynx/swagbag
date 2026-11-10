@@ -71,10 +71,6 @@
   font-size: 27px;
   line-height: 1;
   display: block;
-  transition: transform 0.45s ease;
-}
-.theme-toggle:hover .theme-orbit {
-  transform: rotate(45deg);
 }
 .text-action,
 .inline-link {
@@ -227,7 +223,6 @@
   max-height: 100%;
   object-fit: contain;
   pointer-events: none;
-  animation: drift 7s ease-in-out infinite;
 }
 .hero-seal {
   position: absolute;
@@ -251,11 +246,6 @@
   font-size: 12px;
   line-height: 1.15;
   font-weight: 800;
-}
-@keyframes drift {
-  50% {
-    transform: translateY(-9px) rotate(1deg);
-  }
 }
 .landing-flow {
   border-top: 1px solid var(--line);
@@ -336,14 +326,6 @@
   height: 210px;
   object-fit: contain;
   pointer-events: none;
-  transition: transform 0.45s ease;
-}
-.moments-gallery figure:hover img {
-  transform: rotate(-2deg) scale(1.025);
-}
-:root[data-theme="dark"] .moments-gallery img,
-:root[data-theme="dark"] .hero-visual img {
-  filter: brightness(1.45) saturate(1.05);
 }
 .moments-gallery figcaption {
   display: flex;
@@ -390,12 +372,9 @@
   background: transparent;
   color: var(--ink);
   text-align: left;
-  transition:
-    padding 0.2s,
-    color 0.2s;
+  transition: color 0.2s;
 }
 .door-list button:hover {
-  padding-left: 12px;
   color: var(--blue);
 }
 .door-list button > span {
@@ -466,6 +445,26 @@
   color: var(--muted);
   margin: 0 0 28px;
 }
+.auth-tabs {
+  display: flex;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.auth-tabs button {
+  padding: 0 0 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 800;
+}
+.auth-tabs button.selected {
+  color: var(--blue);
+  border-color: var(--blue);
+}
 .login-sheet form {
   display: grid;
   gap: 18px;
@@ -478,6 +477,29 @@
   font-size: 12px;
   font-weight: 800;
   color: var(--ink);
+}
+.invitation-identity {
+  display: grid;
+  gap: 3px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.invitation-identity b {
+  overflow-wrap: anywhere;
+}
+.invitation-identity span {
+  color: var(--muted);
+}
+.invitation-identity button {
+  width: fit-content;
+  padding: 4px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 800;
 }
 .login-sheet input {
   height: 48px;
@@ -619,11 +641,12 @@
   }
   .landing-footer {
     padding: 22px 18px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    text-align: center;
     gap: 10px;
   }
   .landing-footer .brand {
-    width: 100%;
+    margin: 0;
   }
   .login-sheet {
     padding: 26px 24px;
