@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   ArrowRight,
   CheckCircle,
@@ -6,7 +6,13 @@ import {
   DownloadSimple,
   Gift,
   House,
+  Bell,
   LockKey,
+  List,
+  SidebarSimple,
+  Sun,
+  MoonStars,
+  X,
   Plus,
   Receipt,
   SignOut,
@@ -14,7 +20,11 @@ import {
   Users,
   Wallet,
 } from "@phosphor-icons/react";
+import Brand from "./Brand";
+import Landing from "./Landing";
 import "./App.css";
+
+const DonutChart = lazy(() => import("./DonutChart"));
 
 type Role = "hr" | "finance" | "employee";
 type User = {
@@ -62,6 +72,12 @@ type Audit = {
   action: string;
   entity_id: string;
   detail: string;
+  created_at: string;
+};
+type Notification = {
+  id: string;
+  title: string;
+  occasion: string;
   created_at: string;
 };
 type Page = "overview" | "campaigns" | "people" | "finance" | "about";
@@ -113,7 +129,35 @@ function App() {
   const [paypalConfigured, setPaypalConfigured] = useState(false),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [createOpen, setCreateOpen] = useState(false);
+    [createOpen, setCreateOpen] = useState(false),
+    [navOpen, setNavOpen] = useState(() => window.innerWidth > 800),
+    [notificationOpen, setNotificationOpen] = useState(false),
+    [notifications, setNotifications] = useState<Notification[]>([]),
+    [focusCampaign, setFocusCampaign] = useState<string | null>(null),
+    [theme, setTheme] = useState<"light" | "dark">(() =>
+      localStorage.getItem("hrf-theme") === "dark" ? "dark" : "light",
+    );
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("hrf-theme", theme);
+  }, [theme]);
+  useEffect(() => {
+    const screen = window.matchMedia("(max-width: 800px)");
+    const update = (event: MediaQueryListEvent) => setNavOpen(!event.matches);
+    screen.addEventListener("change", update);
+    return () => screen.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = setTimeout(() => setNotice(""), 4500);
+    return () => clearTimeout(timeout);
+  }, [notice]);
+  async function refreshNotifications() {
+    const result = await api<{ notifications: Notification[] }>(
+      "notifications",
+    );
+    setNotifications(result.notifications);
+  }
   async function refresh(u: User) {
     const calls: Promise<unknown>[] = [
       api<{ campaigns: Campaign[]; selections: Selection[] }>("campaigns").then(
@@ -137,8 +181,16 @@ function App() {
           },
         ),
       );
+    if (u.role === "employee") calls.push(refreshNotifications());
     await Promise.all(calls);
   }
+  useEffect(() => {
+    if (user?.role !== "employee") return;
+    const timer = window.setInterval(() => {
+      void refreshNotifications().catch(() => {});
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [user]);
   useEffect(() => {
     api<{ user: User; paypalConfigured: boolean }>("me")
       .then(async (x) => {
@@ -156,7 +208,7 @@ function App() {
     api(`campaigns/${id}/capture`, {})
       .then(() => {
         setNotice(
-          "Sandbox payment captured. Reward delivery requires a provider integration.",
+          "Sandbox payment captured · Reward delivery needs a provider integration",
         );
         return refresh(user);
       })
@@ -188,14 +240,42 @@ function App() {
     await api("auth/logout", {});
     setUser(null);
     setPage("overview");
+    setNotifications([]);
   }
-  if (loading) return <div className="loading">Loading HR Flings…</div>;
+  function openCampaign(id: string) {
+    setFocusCampaign(id);
+    setPage("campaigns");
+    setNotificationOpen(false);
+    if (user?.role === "employee") {
+      void api(`notifications/read`, { campaignId: id })
+        .then(refreshNotifications)
+        .catch(() => {});
+    }
+  }
+  if (loading)
+    return (
+      <div className="loading">
+        <Brand />
+        <span className="loading-line" />
+        <span className="loading-line short" />
+      </div>
+    );
   if (!user)
     return (
-      <Login
-        onLogin={async (u) => {
-          setUser(u);
-          await refresh(u);
+      <Landing
+        theme={theme}
+        onTheme={() => setTheme(theme === "light" ? "dark" : "light")}
+        onLogin={async (email, password) => {
+          await api("auth/login", {
+            email,
+            password,
+          });
+          const session = await api<{ user: User; paypalConfigured: boolean }>(
+            "me",
+          );
+          setPaypalConfigured(session.paypalConfigured);
+          setUser(session.user);
+          await refresh(session.user);
         }}
       />
     );
@@ -216,22 +296,45 @@ function App() {
   const committed = campaigns
     .filter((c) => c.status !== "paid")
     .reduce((n, c) => n + c.selection_count * c.budget_cents, 0);
+  const chosenCount =
+    user.role === "employee"
+      ? selections.length
+      : campaigns.reduce((sum, campaign) => sum + campaign.selection_count, 0);
+  const availableChoices =
+    user.role === "employee"
+      ? campaigns.length
+      : campaigns.length *
+        users.filter((member) => member.role === "employee").length;
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-icon">
-            <Gift weight="bold" size={21} />
-          </span>
-          HR <b>Flings</b>
+    <div className={`shell ${navOpen ? "nav-open" : "nav-closed"}`}>
+      {navOpen && (
+        <button
+          className="nav-scrim"
+          onClick={() => setNavOpen(false)}
+          aria-label="Close navigation"
+        />
+      )}
+      <aside className="sidebar" aria-label="Workspace sidebar">
+        <div className="sidebar-head">
+          <Brand />
+          <button
+            className="icon-button close-sidebar"
+            onClick={() => setNavOpen(false)}
+            aria-label="Close sidebar"
+          >
+            <X size={20} />
+          </button>
         </div>
-        <div className="nav-label">WORKSPACE</div>
+        <div className="nav-label">YOUR SPACE</div>
         <nav aria-label="Main navigation">
           {links.map((l) => (
             <button
               key={l.id}
               className={`nav-link ${page === l.id ? "current" : ""}`}
-              onClick={() => setPage(l.id)}
+              onClick={() => {
+                setPage(l.id);
+                if (window.innerWidth <= 800) setNavOpen(false);
+              }}
             >
               <l.icon size={20} weight={page === l.id ? "fill" : "regular"} />
               {l.label}
@@ -241,57 +344,133 @@ function App() {
         <div className="sidebar-foot">
           <span className="sandbox">
             <img src="/paypal-monogram.png" alt="PayPal" />
-            Sandbox integration
+            {paypalConfigured
+              ? "PayPal sandbox ready"
+              : "PayPal sandbox preview"}
           </span>
-          <button onClick={logout} className="profile">
-            <span className="avatar">{initials(user.name)}</span>
-            <span>
-              <strong>{user.name}</strong>
-              <small>
-                {user.role === "hr"
-                  ? "HR manager"
-                  : user.role === "finance"
-                    ? "Finance admin"
-                    : "Employee"}
-              </small>
-            </span>
-            <SignOut size={18} />
+          <button onClick={logout} className="logout-link">
+            <SignOut size={19} /> Sign out
           </button>
         </div>
       </aside>
       <main className="main">
         <header className="topbar">
-          <span>
-            HR Flings <em>/</em> {links.find((l) => l.id === page)?.label}
-          </span>
-          <span className="top-user">
-            <span className="avatar">{initials(user.name)}</span>
-            {user.name}
-          </span>
+          <div className="topbar-left">
+            <button
+              className="icon-button nav-toggle"
+              onClick={() => setNavOpen(!navOpen)}
+              aria-label={navOpen ? "Close sidebar" : "Open sidebar"}
+            >
+              {navOpen ? <SidebarSimple size={22} /> : <List size={22} />}
+            </button>
+            <span className="topbar-brand">
+              <Brand />
+            </span>
+            <span className="breadcrumb">
+              {links.find((l) => l.id === page)?.label}
+            </span>
+          </div>
+          <div className="topbar-actions">
+            {user.role === "employee" && (
+              <div className="notification-wrap">
+                <button
+                  className="icon-button notification-button"
+                  onClick={() => setNotificationOpen(!notificationOpen)}
+                  aria-label={`${notifications.length} new campaign notifications`}
+                  aria-expanded={notificationOpen}
+                >
+                  <Bell size={21} />
+                  {notifications.length > 0 && <i>{notifications.length}</i>}
+                </button>
+                {notificationOpen && (
+                  <div className="notification-panel">
+                    <div className="notification-title">
+                      <strong>New moments</strong>
+                      <button
+                        className="icon-button"
+                        onClick={() => setNotificationOpen(false)}
+                        aria-label="Close notifications"
+                      >
+                        <X size={17} />
+                      </button>
+                    </div>
+                    {notifications.length ? (
+                      notifications.map((item) => (
+                        <button
+                          className="notification-item"
+                          key={item.id}
+                          onClick={() => openCampaign(item.id)}
+                        >
+                          <span className="notification-dot" />
+                          <span>
+                            <strong>{item.title}</strong>
+                            <small>
+                              {item.occasion} · {date(item.created_at)}
+                            </small>
+                          </span>
+                          <ArrowRight size={15} />
+                        </button>
+                      ))
+                    ) : (
+                      <p>All caught up</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              className="icon-button theme-button"
+              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+            >
+              {theme === "light" ? <MoonStars size={21} /> : <Sun size={21} />}
+            </button>
+            <span className="top-user">
+              <span className="avatar">{initials(user.name)}</span>
+              <span>
+                <strong>{user.name}</strong>
+                <small>
+                  {user.role === "hr"
+                    ? "HR manager"
+                    : user.role === "finance"
+                      ? "Finance admin"
+                      : "Employee"}
+                </small>
+              </span>
+            </span>
+          </div>
         </header>
         <div className="content">
           {notice && (
             <div className="notice" role="status">
-              {notice}
+              {notice.replace(/\.$/, "")}
               <button onClick={() => setNotice("")} aria-label="Dismiss">
-                ×
+                <X size={16} />
               </button>
             </div>
           )}
           {page === "overview" && (
             <>
-              <Heading
-                eyebrow="YOUR WORKSPACE"
-                title={`Good to see you, ${user.name.split(" ")[0]}.`}
-                description={
-                  user.role === "employee"
-                    ? "Your moments deserve something you will actually enjoy."
-                    : user.role === "hr"
-                      ? "Make every milestone feel personal."
-                      : "A clear view of every reward and every payment."
-                }
-                action={
-                  user.role === "hr" ? (
+              <section className="workspace-hero">
+                <div>
+                  <span className="eyebrow">YOUR SPACE, YOUR MOMENTS</span>
+                  <h1>
+                    {user.role === "employee"
+                      ? `There is more to celebrate, ${user.name.split(" ")[0]}`
+                      : user.role === "hr"
+                        ? `Make it memorable, ${user.name.split(" ")[0]}`
+                        : `See the whole picture, ${user.name.split(" ")[0]}`}
+                  </h1>
+                  <p>
+                    {user.role === "employee"
+                      ? notifications.length
+                        ? `${notifications.length} new moment${notifications.length === 1 ? "" : "s"} waiting for you`
+                        : "Choose something that feels like you"
+                      : user.role === "hr"
+                        ? "Give people a choice that feels genuinely theirs"
+                        : "Every reward and every dollar in one clear view"}
+                  </p>
+                  {user.role === "hr" && (
                     <button
                       className="button primary"
                       onClick={() => {
@@ -299,65 +478,147 @@ function App() {
                         setCreateOpen(true);
                       }}
                     >
-                      <Plus size={17} /> New campaign
+                      <Plus size={17} /> Create a moment
                     </button>
-                  ) : undefined
-                }
-              />
-              <div className="stats">
-                <Stat
-                  label={
-                    user.role === "finance" ? "Total paid" : "Open moments"
-                  }
-                  value={
-                    user.role === "finance"
-                      ? money(paid)
-                      : String(
-                          campaigns.filter((c) => c.status === "open").length,
-                        )
-                  }
-                  icon={user.role === "finance" ? CreditCard : Gift}
-                />
-                <Stat
-                  label={
-                    user.role === "finance"
-                      ? "Awaiting payment"
-                      : user.role === "employee"
-                        ? "Your choices"
-                        : "Employees"
-                  }
-                  value={
-                    user.role === "finance"
-                      ? money(committed)
-                      : String(
-                          user.role === "employee"
-                            ? selections.length
-                            : users.filter((u) => u.role === "employee").length,
-                        )
-                  }
-                  icon={Wallet}
-                />
-                <Stat
-                  label={
-                    user.role === "finance" ? "Campaigns" : "Rewards to explore"
-                  }
-                  value={String(
-                    user.role === "finance" ? campaigns.length : rewards.length,
                   )}
-                  icon={Sparkle}
+                </div>
+                <img
+                  src="/images/team.webp"
+                  alt="Pencil sketch of a team celebration"
+                  draggable={false}
                 />
+              </section>
+              <div className="overview-grid">
+                <section className="metric-section">
+                  <span className="eyebrow">AT A GLANCE</span>
+                  <div className="stats">
+                    <Stat
+                      label={
+                        user.role === "finance"
+                          ? "Paid through PayPal"
+                          : "Open moments"
+                      }
+                      value={
+                        user.role === "finance"
+                          ? money(paid)
+                          : String(
+                              campaigns.filter((c) => c.status === "open")
+                                .length,
+                            )
+                      }
+                      icon={user.role === "finance" ? CreditCard : Gift}
+                    />
+                    <Stat
+                      label={
+                        user.role === "finance"
+                          ? "Ready for payment"
+                          : user.role === "employee"
+                            ? "Your choices"
+                            : "People in the team"
+                      }
+                      value={
+                        user.role === "finance"
+                          ? money(committed)
+                          : String(
+                              user.role === "employee"
+                                ? selections.length
+                                : users.filter((u) => u.role === "employee")
+                                    .length,
+                            )
+                      }
+                      icon={Wallet}
+                    />
+                    <Stat
+                      label={
+                        user.role === "finance" ? "Campaigns" : "Ways to choose"
+                      }
+                      value={String(
+                        user.role === "finance"
+                          ? campaigns.length
+                          : rewards.length,
+                      )}
+                      icon={Sparkle}
+                    />
+                  </div>
+                </section>
+                <section className="chart-section">
+                  <div className="chart-heading">
+                    <span className="eyebrow">THE PULSE</span>
+                    <h2>
+                      {user.role === "finance"
+                        ? "Money in motion"
+                        : user.role === "hr"
+                          ? "Team participation"
+                          : "Your choices"}
+                    </h2>
+                  </div>
+                  <Suspense
+                    fallback={
+                      <div
+                        className="donut donut-skeleton"
+                        aria-label="Loading chart"
+                      />
+                    }
+                  >
+                    <DonutChart
+                      theme={theme}
+                      center={
+                        user.role === "finance"
+                          ? money(paid)
+                          : `${Math.round((100 * chosenCount) / Math.max(1, availableChoices))}%`
+                      }
+                      caption={user.role === "finance" ? "paid" : "chosen"}
+                      slices={
+                        user.role === "finance"
+                          ? [
+                              { name: "Paid", value: paid, color: "#0b67d6" },
+                              {
+                                name: "Awaiting",
+                                value: committed,
+                                color: "#ffbd68",
+                              },
+                            ]
+                          : [
+                              {
+                                name: "Chosen",
+                                value: chosenCount,
+                                color: "#0b67d6",
+                              },
+                              {
+                                name: "Still to choose",
+                                value: Math.max(
+                                  0,
+                                  availableChoices - chosenCount,
+                                ),
+                                color: "#c9dff5",
+                              },
+                            ]
+                      }
+                    />
+                  </Suspense>
+                  <div className="chart-legend">
+                    <span>
+                      <i />
+                      {user.role === "finance" ? "Paid" : "Chosen"}
+                    </span>
+                    <span>
+                      <i />
+                      {user.role === "finance" ? "Awaiting" : "Still to choose"}
+                    </span>
+                  </div>
+                </section>
               </div>
               <div className="section-heading">
                 <div>
                   <h2>
                     {user.role === "employee"
-                      ? "Moments for you"
-                      : "Recent campaigns"}
+                      ? "Your moments"
+                      : "Recent moments"}
                   </h2>
                   <p>
                     {user.role === "employee"
-                      ? "Choose a reward that feels right."
-                      : "Everything happening across your workspace."}
+                      ? "Find something that feels right"
+                      : "What is happening across your team"}
                   </p>
                 </div>
                 <button onClick={() => setPage("campaigns")}>
@@ -372,17 +633,9 @@ function App() {
                 busy={busy}
                 paypalConfigured={paypalConfigured}
                 run={run}
+                isPreview
+                onOpen={openCampaign}
               />
-              <div className="callout">
-                <Sparkle size={21} />
-                <span>
-                  <b>Less guessing. More meaning.</b>
-                  <small>
-                    People choose what matters to them, while every campaign
-                    stays within your budget.
-                  </small>
-                </span>
-              </div>
             </>
           )}
           {page === "campaigns" && (
@@ -390,7 +643,7 @@ function App() {
               <Heading
                 eyebrow="THE MOMENTS"
                 title="Campaigns"
-                description="Holidays, milestones, onboarding, and everything worth celebrating."
+                description="Holidays, milestones, onboarding and everything worth celebrating"
                 action={
                   user.role === "hr" ? (
                     <button
@@ -413,6 +666,8 @@ function App() {
                 />
               )}
               <Campaigns
+                key={focusCampaign || "campaigns"}
+                initialActive={focusCampaign}
                 campaigns={campaigns}
                 selections={selections}
                 rewards={rewards}
@@ -420,6 +675,7 @@ function App() {
                 busy={busy}
                 paypalConfigured={paypalConfigured}
                 run={run}
+                onOpen={openCampaign}
               />
             </>
           )}
@@ -428,13 +684,13 @@ function App() {
               <Heading
                 eyebrow="TEAM ACCESS"
                 title="People"
-                description="The right people in the right roles."
+                description="The right people in the right roles"
               />
               {user.role === "finance" && (
                 <UserForm
                   busy={busy}
                   onSubmit={async (data) => {
-                    await run("users", data, "Team member added.");
+                    return !!(await run("users", data, "Team member added."));
                   }}
                 />
               )}
@@ -473,7 +729,7 @@ function App() {
               <Heading
                 eyebrow="FINANCIAL CONTROL"
                 title="Finance & audit"
-                description="Every campaign, commitment, and captured payment."
+                description="Every campaign, commitment and captured payment"
               />
               <div className="stats">
                 <Stat
@@ -527,14 +783,14 @@ function App() {
                 ) : (
                   <Empty
                     title="No payments yet"
-                    detail="Approved campaigns will appear here."
+                    detail="Approved campaigns will appear here"
                   />
                 )}
               </div>
               <div className="section-heading next">
                 <div>
                   <h2>Audit trail</h2>
-                  <p>Recorded changes and payment actions.</p>
+                  <p>Recorded changes and payment actions</p>
                 </div>
                 <a className="export-link" href="/api/finance/export/audit">
                   <DownloadSimple size={16} /> Export CSV
@@ -559,42 +815,40 @@ function App() {
           {page === "about" && (
             <div className="about">
               <div className="eyebrow">ABOUT HR FLINGS</div>
-              <h1>More meaning in every moment.</h1>
+              <h1>More meaning in every moment</h1>
               <p>
-                HR Flings helps companies celebrate people without assuming
-                everyone wants the same thing. Employees privately describe what
-                would be useful, choose from approved rewards, and receive
-                something that fits the occasion.
+                HR Flings makes company celebrations feel personal through
+                thoughtful choices and clear budgets
               </p>
               <div className="about-grid">
                 <div>
                   <Gift size={27} />
                   <h3>Every occasion</h3>
                   <p>
-                    Holidays, new hires, anniversaries, team wins, and custom
-                    moments.
+                    Holidays, new hires, anniversaries, team wins and custom
+                    moments
                   </p>
                 </div>
                 <div>
                   <LockKey size={27} />
                   <h3>Private by design</h3>
                   <p>
-                    Preferences are sent to Cloudflare AI for suggestions. HR
-                    sees participation totals, not personal notes.
+                    Cloudflare AI helps with suggestions while HR sees
+                    participation totals without personal notes
                   </p>
                 </div>
                 <div>
                   <CreditCard size={27} />
                   <h3>Clear spending</h3>
                   <p>
-                    Finance reviews the total and tests PayPal sandbox checkout.
-                    Voucher fulfillment needs a provider integration.
+                    Finance sees the total and tests PayPal sandbox checkout
+                    while voucher delivery awaits a provider integration
                   </p>
                 </div>
               </div>
               <div className="about-foot">
-                Built for the PayPal AI Hackathon by HR Flings. Independent
-                project; not affiliated with or endorsed by PayPal.
+                Built for the PayPal AI Hackathon by HR Flings · Independent
+                project, not affiliated with or endorsed by PayPal
               </div>
               <PasswordForm
                 busy={busy}
@@ -610,18 +864,6 @@ function App() {
           )}
         </div>
       </main>
-      <nav className="mobile-nav" aria-label="Mobile navigation">
-        {links.map((l) => (
-          <button
-            key={l.id}
-            className={page === l.id ? "current" : ""}
-            onClick={() => setPage(l.id)}
-          >
-            <l.icon size={21} weight={page === l.id ? "fill" : "regular"} />
-            <span>{l.label}</span>
-          </button>
-        ))}
-      </nav>
     </div>
   );
 }
@@ -675,97 +917,6 @@ function Empty({ title, detail }: { title: string; detail: string }) {
     </div>
   );
 }
-function Login({ onLogin }: { onLogin: (u: User) => void }) {
-  const [email, setEmail] = useState(""),
-    [password, setPassword] = useState(""),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const x = await api<{ user: User }>("auth/login", { email, password });
-      onLogin(x.user);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Sign in failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <div className="login">
-      <div className="login-hero">
-        <div className="brand light">
-          <span className="brand-icon">
-            <Gift weight="bold" size={21} />
-          </span>
-          HR <b>Flings</b>
-        </div>
-        <div>
-          <div className="eyebrow">REWARDS, REIMAGINED</div>
-          <h1>
-            Celebrate people.
-            <br />
-            Skip the guesswork.
-          </h1>
-          <p>
-            Thoughtful rewards for every moment that matters, from the first day
-            to the biggest team win.
-          </p>
-          <div className="pill-row">
-            <span>Every occasion</span>
-            <span>Every person</span>
-            <span>One clear budget</span>
-          </div>
-        </div>
-        <small>
-          Built for the PayPal AI Hackathon · PayPal sandbox integration
-        </small>
-      </div>
-      <div className="login-form">
-        <form onSubmit={submit}>
-          <div className="login-icon">
-            <Gift weight="fill" size={24} />
-          </div>
-          <h2>Welcome back</h2>
-          <p>Sign in to your HR Flings workspace.</p>
-          <label>
-            Email address
-            <input
-              type="email"
-              autoComplete="username"
-              required
-              placeholder="you@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          {error && (
-            <div className="error" role="alert">
-              {error}
-            </div>
-          )}
-          <button className="button primary full" disabled={busy}>
-            Sign in <ArrowRight size={17} />
-          </button>
-          <small>Access is managed by your organization.</small>
-        </form>
-      </div>
-    </div>
-  );
-}
 function Campaigns({
   campaigns,
   selections,
@@ -774,6 +925,9 @@ function Campaigns({
   busy,
   paypalConfigured,
   run,
+  isPreview = false,
+  onOpen,
+  initialActive = null,
 }: {
   campaigns: Campaign[];
   selections: Selection[];
@@ -786,8 +940,11 @@ function Campaigns({
     data: unknown,
     success: string,
   ) => Promise<T | undefined>;
+  isPreview?: boolean;
+  onOpen: (id: string) => void;
+  initialActive?: string | null;
 }) {
-  const [active, setActive] = useState<string | null>(null),
+  const [active, setActive] = useState<string | null>(initialActive),
     [preference, setPreference] = useState(""),
     [recommendations, setRecommendations] = useState<Reward[] | null>(null),
     [reason, setReason] = useState("");
@@ -795,7 +952,7 @@ function Campaigns({
     return (
       <Empty
         title="No campaigns yet"
-        detail="The next occasion is just around the corner."
+        detail="The next occasion is just around the corner"
       />
     );
   return (
@@ -803,17 +960,32 @@ function Campaigns({
       {campaigns.map((c) => {
         const chosen = selections.find((s) => s.campaign_id === c.id);
         return (
-          <article className="campaign" key={c.id}>
-            <div className="campaign-symbol">
-              <Gift size={24} />
-            </div>
+          <article
+            className={`campaign ${active === c.id ? "expanded" : ""}`}
+            key={c.id}
+          >
+            <img
+              className="campaign-image"
+              src={
+                c.occasion === "Holiday"
+                  ? "/images/festival.webp"
+                  : c.occasion === "Onboarding"
+                    ? "/images/ride.webp"
+                    : c.occasion === "Team achievement"
+                      ? "/images/team.webp"
+                      : "/images/unwind.webp"
+              }
+              alt=""
+              draggable={false}
+              loading="lazy"
+            />
             <div className="campaign-content">
               <div className="campaign-meta">
                 <span>{c.occasion}</span>
                 <span className={`status ${c.status}`}>{c.status}</span>
               </div>
               <h3>{c.title}</h3>
-              <p>{c.message || "A little something to mark the moment."}</p>
+              <p>{c.message || "A little something to mark the moment"}</p>
               <div className="campaign-facts">
                 <span>
                   <Wallet size={15} />
@@ -834,7 +1006,14 @@ function Campaigns({
               </div>
             </div>
             <div className="campaign-action">
-              {user.role === "employee" && c.status === "open" ? (
+              {isPreview ? (
+                <button
+                  className="button text-button"
+                  onClick={() => onOpen(c.id)}
+                >
+                  Open moment <ArrowRight size={17} />
+                </button>
+              ) : user.role === "employee" && c.status === "open" ? (
                 <button
                   className="button secondary"
                   onClick={() => {
@@ -850,6 +1029,13 @@ function Campaigns({
                 <button
                   className="button secondary"
                   disabled={!c.selection_count || busy || !paypalConfigured}
+                  title={
+                    !paypalConfigured
+                      ? "PayPal sandbox credentials are needed"
+                      : !c.selection_count
+                        ? "Waiting for employee choices"
+                        : undefined
+                  }
                   onClick={async () => {
                     const x = await run<{ approvalUrl: string }>(
                       `campaigns/${c.id}/checkout`,
@@ -859,95 +1045,139 @@ function Campaigns({
                     if (x) location.href = x.approvalUrl;
                   }}
                 >
-                  Pay {money(c.selection_count * c.budget_cents)}{" "}
+                  {!c.selection_count
+                    ? "Waiting for choices"
+                    : paypalConfigured
+                      ? `Pay ${money(c.selection_count * c.budget_cents)}`
+                      : "Add PayPal keys to pay"}{" "}
                   <ArrowRight size={15} />
                 </button>
               ) : (
-                <span className="secondary-text">
-                  {c.status === "paid"
-                    ? "Payment captured"
-                    : c.status === "pending"
-                      ? "Awaiting PayPal"
-                      : "Open"}
-                </span>
+                <button
+                  className="button text-button"
+                  onClick={() => setActive(active === c.id ? null : c.id)}
+                >
+                  {active === c.id ? "Close details" : "View details"}{" "}
+                  <ArrowRight size={16} />
+                </button>
               )}
             </div>
-            {active === c.id && user.role === "employee" && (
-              <div className="picker">
-                <div className="picker-heading">
-                  <Sparkle size={20} />
+            {active === c.id && !isPreview && user.role !== "employee" && (
+              <div className="campaign-detail">
+                <div>
+                  <span className="eyebrow">MOMENT DETAILS</span>
+                  <h4>{c.title}</h4>
+                  <p>{c.message || "A little something to mark the moment"}</p>
+                </div>
+                <div className="detail-facts">
                   <span>
-                    <b>Make this moment yours</b>
-                    <small>
-                      Tell us what would be useful. Cloudflare AI processes this
-                      answer; HR sees only participation totals.
-                    </small>
+                    Budget per person <strong>{money(c.budget_cents)}</strong>
                   </span>
-                </div>
-                <div className="search-reward">
-                  <input
-                    aria-label="Your reward preference"
-                    maxLength={500}
-                    value={preference}
-                    onChange={(e) => setPreference(e.target.value)}
-                    placeholder="I want to learn, relax, spend time with family..."
-                  />
-                  <button
-                    className="button dark"
-                    disabled={busy || preference.trim().length < 8}
-                    onClick={async () => {
-                      const x = await run<{
-                        rewards: Reward[];
-                        reason: string;
-                      }>(
-                        `campaigns/${c.id}/recommend`,
-                        { preference },
-                        "Personalized picks are ready.",
-                      );
-                      if (x) {
-                        setRecommendations(x.rewards);
-                        setReason(x.reason);
-                      }
-                    }}
-                  >
-                    Find my fit
-                  </button>
-                </div>
-                {reason && (
-                  <div className="reason">
-                    <Sparkle size={15} />
-                    {reason}
-                  </div>
-                )}
-                <div className="reward-grid">
-                  {(recommendations || rewards).map((r) => (
-                    <button
-                      className="reward"
-                      key={r.id}
-                      disabled={busy}
-                      onClick={async () => {
-                        const x = await run(
-                          `campaigns/${c.id}/select`,
-                          { rewardId: r.id, reason: preference },
-                          "Your choice is saved.",
-                        );
-                        if (x) {
-                          setActive(null);
-                          setRecommendations(null);
-                        }
-                      }}
-                    >
-                      <span>{r.category}</span>
-                      <b>{r.title}</b>
-                      <small>{r.description}</small>
-                      <em>
-                        Select <ArrowRight size={15} />
-                      </em>
-                    </button>
-                  ))}
+                  <span>
+                    Choices made{" "}
+                    <strong>
+                      {c.selection_count} of {c.employee_count}
+                    </strong>
+                  </span>
+                  <span>
+                    Current state <strong>{c.status}</strong>
+                  </span>
                 </div>
               </div>
             )}
+            {active === c.id &&
+              !isPreview &&
+              user.role === "employee" &&
+              c.status !== "open" && (
+                <div className="campaign-detail">
+                  <span className="eyebrow">MOMENT DETAILS</span>
+                  <h4>
+                    {c.status === "pending"
+                      ? "Payment is in progress"
+                      : "Payment has been captured"}
+                  </h4>
+                  <p>Reward delivery follows after provider fulfillment</p>
+                </div>
+              )}
+            {active === c.id &&
+              !isPreview &&
+              user.role === "employee" &&
+              c.status === "open" && (
+                <div className="picker">
+                  <div className="picker-heading">
+                    <Sparkle size={20} />
+                    <span>
+                      <b>Make this moment yours</b>
+                      <small>
+                        Tell us what would be useful · Cloudflare AI processes
+                        this answer while HR sees only participation totals
+                      </small>
+                    </span>
+                  </div>
+                  <div className="search-reward">
+                    <input
+                      aria-label="Your reward preference"
+                      maxLength={500}
+                      value={preference}
+                      onChange={(e) => setPreference(e.target.value)}
+                      placeholder="I want to learn, relax or spend time with family"
+                    />
+                    <button
+                      className="button dark"
+                      disabled={busy || preference.trim().length < 8}
+                      onClick={async () => {
+                        const x = await run<{
+                          rewards: Reward[];
+                          reason: string;
+                        }>(
+                          `campaigns/${c.id}/recommend`,
+                          { preference },
+                          "Personalized picks are ready.",
+                        );
+                        if (x) {
+                          setRecommendations(x.rewards);
+                          setReason(x.reason);
+                        }
+                      }}
+                    >
+                      Find my fit
+                    </button>
+                  </div>
+                  {reason && (
+                    <div className="reason">
+                      <Sparkle size={15} />
+                      {reason.replace(/[.!?]+$/, "")}
+                    </div>
+                  )}
+                  <div className="reward-grid">
+                    {(recommendations || rewards).map((r) => (
+                      <button
+                        className="reward"
+                        key={r.id}
+                        disabled={busy}
+                        onClick={async () => {
+                          const x = await run(
+                            `campaigns/${c.id}/select`,
+                            { rewardId: r.id, reason: preference },
+                            "Your choice is saved.",
+                          );
+                          if (x) {
+                            setActive(null);
+                            setRecommendations(null);
+                          }
+                        }}
+                      >
+                        <span>{r.category}</span>
+                        <b>{r.title}</b>
+                        <small>{r.description}</small>
+                        <em>
+                          Select <ArrowRight size={15} />
+                        </em>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
           </article>
         );
       })}
@@ -983,7 +1213,7 @@ function CampaignForm({
       <div className="form-title">
         <span>
           <h2>Create a moment</h2>
-          <p>Set the guardrails. Employees make the choice.</p>
+          <p>Set the guardrails, then let employees make the choice</p>
         </span>
         <button type="button" onClick={onClose} aria-label="Close">
           ×
@@ -1033,7 +1263,7 @@ function CampaignForm({
             maxLength={300}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Thanks for making this quarter remarkable."
+            placeholder="Thanks for making this quarter remarkable"
           />
         </label>
       </div>
@@ -1047,7 +1277,7 @@ function UserForm({
   onSubmit,
   busy,
 }: {
-  onSubmit: (data: unknown) => Promise<void>;
+  onSubmit: (data: unknown) => Promise<boolean>;
   busy: boolean;
 }) {
   const [name, setName] = useState(""),
@@ -1059,16 +1289,17 @@ function UserForm({
       className="panel form-panel"
       onSubmit={async (e) => {
         e.preventDefault();
-        await onSubmit({ name, email, role, password });
-        setName("");
-        setEmail("");
-        setPassword("");
+        if (await onSubmit({ name, email, role, password })) {
+          setName("");
+          setEmail("");
+          setPassword("");
+        }
       }}
     >
       <div className="form-title">
         <span>
           <h2>Add a team member</h2>
-          <p>Create access for an employee or manager.</p>
+          <p>Create access for an employee or manager</p>
         </span>
       </div>
       <div className="form-grid">
@@ -1143,7 +1374,7 @@ function PasswordForm({
       }}
     >
       <h2>Account security</h2>
-      <p>Change your password and sign out other sessions.</p>
+      <p>Change your password and sign out other sessions</p>
       <label>
         Current password
         <input
