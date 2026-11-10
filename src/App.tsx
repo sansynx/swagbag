@@ -296,10 +296,11 @@ function App() {
   }
   if (loading)
     return (
-      <div className="loading">
+      <div className="loading" role="status" aria-live="polite">
         <Brand />
-        <span className="loading-line" />
-        <span className="loading-line short" />
+        <p>Making room for better rewards</p>
+        <span className="loading-keywords">People · choices · clarity</span>
+        <span className="loading-track" aria-hidden="true" />
       </div>
     );
   if (!user)
@@ -388,6 +389,7 @@ function App() {
               className={`nav-link ${page === l.id ? "current" : ""}`}
               onClick={() => {
                 setPage(l.id);
+                setNotificationOpen(false);
                 if (window.innerWidth <= 800) setNavOpen(false);
               }}
             >
