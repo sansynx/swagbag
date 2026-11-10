@@ -65,6 +65,23 @@ function json(data: unknown, status = 200, headers?: HeadersInit) {
 function error(message: string, status = 400) {
   return json({ error: message }, status);
 }
+function csv(rows: unknown[][], filename: string) {
+  const value = (cell: unknown) => {
+    const raw = String(cell ?? "");
+    const safe = /^[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw;
+    return `"${safe.replaceAll('"', '""')}"`;
+  };
+  return new Response(
+    rows.map((row) => row.map(value).join(",")).join("\r\n"),
+    {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
 function hex(bytes: ArrayBuffer | Uint8Array) {
   return Array.from(new Uint8Array(bytes))
     .map((x) => x.toString(16).padStart(2, "0"))
@@ -115,7 +132,7 @@ function tokenFrom(request: Ctx["request"]) {
 }
 function cookie(request: Ctx["request"], value: string, age: number) {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  return `hrf_session=${value}; HttpOnly${secure}; SameSite=Strict; Path=/; Max-Age=${age}`;
+  return `hrf_session=${value}; HttpOnly${secure}; SameSite=Lax; Path=/; Max-Age=${age}`;
 }
 async function currentUser(ctx: Ctx): Promise<User | null> {
   const token = tokenFrom(ctx.request);
@@ -228,6 +245,18 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
       const input = await body(request);
       const email = field(input.email, 200).toLowerCase();
       const password = field(input.password, 200);
+      const emailHash = await sha(email);
+      const throttle = await db
+        .prepare(
+          "SELECT failures FROM login_attempts WHERE email_hash=? AND window_start>datetime('now','-15 minutes')",
+        )
+        .bind(emailHash)
+        .first<{ failures: number }>();
+      if (throttle && throttle.failures >= 8)
+        return error(
+          "Too many sign-in attempts. Try again in 15 minutes.",
+          429,
+        );
       const user = await db
         .prepare("SELECT * FROM users WHERE email=?")
         .bind(email)
@@ -236,8 +265,19 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
         password,
         user?.password_salt ?? "unknown-salt",
       );
-      if (!user || candidate !== user.password_hash)
+      if (!user || candidate !== user.password_hash) {
+        await db
+          .prepare(
+            "INSERT INTO login_attempts(email_hash,failures) VALUES(?,1) ON CONFLICT(email_hash) DO UPDATE SET failures=CASE WHEN window_start<=datetime('now','-15 minutes') THEN 1 ELSE failures+1 END, window_start=CASE WHEN window_start<=datetime('now','-15 minutes') THEN CURRENT_TIMESTAMP ELSE window_start END",
+          )
+          .bind(emailHash)
+          .run();
         return error("Invalid credentials", 401);
+      }
+      await db
+        .prepare("DELETE FROM login_attempts WHERE email_hash=?")
+        .bind(emailHash)
+        .run();
       const token = crypto.randomUUID() + crypto.randomUUID();
       await db
         .prepare(
@@ -394,19 +434,28 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
           preference = field(input.preference, 500);
         if (preference.length < 8) return error("Tell us what would be useful");
         const prompt = `You are a private employee reward assistant. Choose exactly 3 reward IDs from this approved list. Consider the occasion and employee's need. Return ONLY JSON: {"ids":["id1","id2","id3"],"reason":"one short supportive sentence"}. Never invent a reward. Campaign occasion: ${campaign.occasion}. Employee need: ${preference}. Rewards: ${JSON.stringify(rewards.map(({ id, title, description, tags }) => ({ id, title, description, tags })))}.`;
-        const result = (await ctx.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: 220,
-        })) as { response?: string };
+        let result: { response?: string | { ids?: unknown; reason?: unknown } };
+        try {
+          result = (await ctx.env.AI.run("@cf/meta/llama-3.2-3b-instruct", {
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 220,
+          })) as { response?: string | { ids?: unknown; reason?: unknown } };
+        } catch {
+          return error(
+            "AI suggestions are unavailable. You can still choose any reward.",
+            503,
+          );
+        }
         let parsed: { ids?: string[]; reason?: string } = {};
         try {
-          parsed = JSON.parse(
-            result.response?.match(/\{[\s\S]*\}/)?.[0] ?? "{}",
-          );
+          parsed =
+            typeof result.response === "string"
+              ? JSON.parse(result.response.match(/\{[\s\S]*\}/)?.[0] ?? "{}")
+              : (result.response ?? {});
         } catch {
           return error("Recommendation is temporarily unavailable", 503);
         }
-        const ids = [...new Set(parsed.ids ?? [])]
+        const ids = [...new Set(Array.isArray(parsed.ids) ? parsed.ids : [])]
           .filter((x): x is (typeof rewards)[number]["id"] =>
             rewards.some((r) => r.id === x),
           )
@@ -573,6 +622,62 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
           .all()
       ).results;
       return json({ payments, auditLogs });
+    }
+    if (path === "finance/export/payments" && method === "GET") {
+      if (!allowed(user, ["finance"])) return error("Forbidden", 403);
+      const rows = (
+        await db
+          .prepare(
+            "SELECT c.title,c.occasion,p.amount_cents,p.status,p.order_id,p.capture_id,p.created_at FROM payments p JOIN campaigns c ON c.id=p.campaign_id ORDER BY p.created_at DESC",
+          )
+          .all()
+      ).results;
+      return csv(
+        [
+          [
+            "Campaign",
+            "Occasion",
+            "Amount USD",
+            "Status",
+            "PayPal order",
+            "PayPal capture",
+            "Created UTC",
+          ],
+          ...rows.map((r) => [
+            r.title,
+            r.occasion,
+            (Number(r.amount_cents) / 100).toFixed(2),
+            r.status,
+            r.order_id,
+            r.capture_id,
+            r.created_at,
+          ]),
+        ],
+        "hr-flings-payments.csv",
+      );
+    }
+    if (path === "finance/export/audit" && method === "GET") {
+      if (!allowed(user, ["finance"])) return error("Forbidden", 403);
+      const rows = (
+        await db
+          .prepare(
+            "SELECT a.action,u.email AS actor_email,a.entity_id,a.detail,a.created_at FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC",
+          )
+          .all()
+      ).results;
+      return csv(
+        [
+          ["Action", "Actor email", "Entity ID", "Detail", "Created UTC"],
+          ...rows.map((r) => [
+            r.action,
+            r.actor_email,
+            r.entity_id,
+            r.detail,
+            r.created_at,
+          ]),
+        ],
+        "hr-flings-audit.csv",
+      );
     }
     return error("Not found", 404);
   } catch (e) {

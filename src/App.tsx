@@ -3,6 +3,7 @@ import {
   ArrowRight,
   CheckCircle,
   CreditCard,
+  DownloadSimple,
   Gift,
   House,
   LockKey,
@@ -495,6 +496,9 @@ function App() {
                     Amounts come from employee selections and campaign budgets.
                   </p>
                 </div>
+                <a className="export-link" href="/api/finance/export/payments">
+                  <DownloadSimple size={16} /> Export CSV
+                </a>
               </div>
               <div className="panel">
                 <div className="table-head ledger-grid">
@@ -529,6 +533,9 @@ function App() {
                   <h2>Audit trail</h2>
                   <p>Recorded changes and payment actions.</p>
                 </div>
+                <a className="export-link" href="/api/finance/export/audit">
+                  <DownloadSimple size={16} /> Export CSV
+                </a>
               </div>
               <div className="panel audit">
                 {audit.map((a) => (
@@ -569,16 +576,16 @@ function App() {
                   <LockKey size={27} />
                   <h3>Private by design</h3>
                   <p>
-                    Personal preferences stay with the employee. HR sees
-                    selections and totals.
+                    Preferences are sent to Cloudflare AI for suggestions. HR
+                    sees participation totals, not personal notes.
                   </p>
                 </div>
                 <div>
                   <CreditCard size={27} />
                   <h3>Clear spending</h3>
                   <p>
-                    Finance reviews the total and pays through PayPal sandbox
-                    checkout.
+                    Finance reviews the total and tests PayPal sandbox checkout.
+                    Voucher fulfillment needs a provider integration.
                   </p>
                 </div>
               </div>
@@ -859,8 +866,8 @@ function Campaigns({
                   <span>
                     <b>Make this moment yours</b>
                     <small>
-                      Tell us what would be useful right now. Your answer stays
-                      private.
+                      Tell us what would be useful. Cloudflare AI processes this
+                      answer; HR sees only participation totals.
                     </small>
                   </span>
                 </div>
