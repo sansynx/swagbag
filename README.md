@@ -19,10 +19,56 @@ Companies mean well when they give out T-shirts, bottles, and stickers. People o
 - **Employees** get notified, ask AI for suggestions from approved rewards, and choose for themselves; their preference stays private
 - **Finance** sees commitments, payment records, exports, and an audit trail, with a PayPal sandbox checkout flow for funded moments
 
-<details>
+<details open>
 <summary>How the app works</summary>
 
-HR invites people, manages groups, and creates moments. An eligible employee selects a reward. Cloudflare Workers AI suggests options from a fixed catalog based on the employee's private preference. Finance can then approve a PayPal sandbox order for the selected rewards. The app records the capture when PayPal credentials are configured. Without credentials, finance can walk through a labeled simulation that makes no PayPal request or ledger entry. Voucher codes are supplied by HR and delivered in the app; SwagBag does not buy or email vouchers.
+**From a moment to a personal choice**
+
+<a href="assets/how-it-works.svg"><img src="assets/how-it-works.svg" alt="HR creates a moment for selected employees; eligible employees receive it, share a private preference, get approved AI suggestions, and choose a reward. HR can also send an existing voucher code." width="100%" /></a>
+
+**Payment and records**
+
+<a href="assets/payment-and-records.svg"><img src="assets/payment-and-records.svg" alt="Finance reviews choices. With sandbox credentials, SwagBag creates a PayPal order, records it as pending, sends finance to approve it, captures it, and records the result. Without credentials, finance sees a simulation with no PayPal request or payment record. Finance can export records as CSV." width="100%" /></a>
+
+<details>
+<summary>Mermaid source</summary>
+
+```mermaid
+flowchart TB
+  HR["HR invites people<br/>and creates groups"] --> MOMENT["Create a moment<br/>Audience + budget"]
+  MOMENT --> NOTICE["Eligible employees<br/>get notified"]
+  NOTICE --> NEED["Employee shares a<br/>private preference"]
+  NEED --> AI["Workers AI suggests<br/>approved rewards"]
+  AI --> CHOICE["Employee chooses<br/>one reward"]
+  MOMENT --> CODE["Optional: HR sends an<br/>existing voucher code"]
+```
+
+```mermaid
+sequenceDiagram
+  actor Finance
+  participant App as SwagBag
+  participant D1 as D1 records
+  participant PayPal as PayPal Sandbox
+  Finance->>App: Review chosen rewards
+  alt Sandbox credentials configured
+    App->>PayPal: Create order
+    PayPal-->>App: Order and approval URL
+    App->>D1: Save pending payment and audit event
+    App-->>Finance: Open approval page
+    Finance->>PayPal: Approve order
+    PayPal-->>App: Return to SwagBag
+    App->>PayPal: Capture order
+    PayPal-->>App: Completed capture
+    App->>D1: Mark paid and write audit event
+  else No credentials
+    App-->>Finance: Show labeled simulation
+    Note over App,D1: No PayPal request or payment record
+  end
+  Finance->>App: Export CSV
+  App->>D1: Read payment and audit records
+```
+
+</details>
 
 </details>
 
