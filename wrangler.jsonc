@@ -1,0 +1,13 @@
+{
+  "name": "hr-flings",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-11-10",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hr-flings",
+      "database_id": "89c131da-848a-4fa6-afce-80b91cf9a3f8"
+    }
+  ],
+  "ai": { "binding": "AI" }
+}
