@@ -54,12 +54,21 @@ The PayPal sandbox credentials are needed for checkout. For judging, put demo ac
 
 ## Built with
 
-- React 19, TypeScript, and Vite 8 for a small web client; Cloudflare Pages and Pages Functions for hosting and the API
-- Cloudflare D1 for records and Workers AI for private reward suggestions
-- PayPal Orders API in sandbox mode for approval and capture, plus ECharts for finance charts
-- Codex assisted with design and development
+| Technology                           | Use in SwagBag                                                                                 |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| PayPal Orders API v2                 | Direct REST integration for sandbox order approval and capture when credentials are configured |
+| Cloudflare Workers AI                | Llama 3.2 3B Instruct suggests rewards from the approved catalog                               |
+| Cloudflare Pages, Functions, and D1  | Hosting, role-aware API, and application records                                               |
+| React, TypeScript, Vite, and ECharts | Responsive interface and finance charts                                                        |
+| Codex                                | Assisted with design and development                                                           |
+
+No PayPal open-source SDK or sample project is included; the app calls the official Orders API directly.
 
 SwagBag uses React and Vite rather than Next.js. This kept the client and Cloudflare Functions setup small for the hackathon.
+
+## Hackathon
+
+Built for the <a href="https://paypalaihackathon.devpost.com/">PayPal AI Hackathon</a>. The finance workspace includes a labeled payment-flow simulation for demos without sandbox credentials.
 
 ## License
 
