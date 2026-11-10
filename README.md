@@ -22,7 +22,7 @@ Companies mean well when they give out T-shirts, bottles, and stickers. People o
 <details>
 <summary>How the app works</summary>
 
-HR invites people, manages groups, and creates moments. An eligible employee selects a reward. Cloudflare Workers AI suggests options from a fixed catalog based on the employee's private preference. Finance can then approve a PayPal sandbox order for the selected rewards. The app records the capture when PayPal credentials are configured. Voucher codes are supplied by HR and delivered in the app; SwagBag does not buy or email vouchers.
+HR invites people, manages groups, and creates moments. An eligible employee selects a reward. Cloudflare Workers AI suggests options from a fixed catalog based on the employee's private preference. Finance can then approve a PayPal sandbox order for the selected rewards. The app records the capture when PayPal credentials are configured. Without credentials, finance can walk through a labeled simulation that makes no PayPal request or ledger entry. Voucher codes are supplied by HR and delivered in the app; SwagBag does not buy or email vouchers.
 
 </details>
 
