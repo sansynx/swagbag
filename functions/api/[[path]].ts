@@ -105,7 +105,7 @@ async function passwordHash(password: string, salt: string) {
       {
         name: "PBKDF2",
         salt: new TextEncoder().encode(salt),
-        iterations: 210_000,
+        iterations: 100_000,
         hash: "SHA-256",
       },
       key,
@@ -717,6 +717,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     if (message.includes("UNIQUE constraint failed"))
       return error("Already exists", 409);
     if (message === "PayPal is not configured") return error(message, 503);
+    console.error("API request failed:", message);
     return error("Request could not be completed", 500);
   }
 };
